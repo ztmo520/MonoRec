@@ -38,6 +38,7 @@ class KittiOdometryDataset(Dataset):
         :param return_mvobj_mask: Return additional moving object mask. Only used during training. If return_mvobj_mask=2, then the mask is returned as target instead of the depthmap. (Default=False)
         :param use_index_mask: Use the listed index masks (if a sample is listed in one of the masks, it is not used). (Default=())
         """
+        # 给类中的各种变量赋值
         self.dataset_dir = Path(dataset_dir)
         self.frame_count = frame_count
         self.sequences = sequences
@@ -48,17 +49,23 @@ class KittiOdometryDataset(Dataset):
         self.target_image_size = target_image_size
         self.use_index_mask = use_index_mask
         self.offset_d = offset_d
+        # 如果没有指定用哪些序列，则使用00到10共11个序列
         if self.sequences is None:
             self.sequences = [f"{i:02d}" for i in range(11)]
+        # 用kitti提供的python包来读取数据集
         self._datasets = [pykitti.odometry(dataset_dir, sequence) for sequence in self.sequences]
+        # 计算一下每个采样读取图片的偏移量，和加了扩张后的图片数量
         self._offset = (frame_count // 2) * dilation
         extra_frames = frame_count * dilation
+        # 如果使用深度图，并且是带注释的深度图，除关键帧外最多每个采样选10张图，每边5张
         if self.annotated_lidar and self.lidar_depth:
             extra_frames = max(extra_frames, 10)
             self._offset = max(self._offset, 5)
+        # 计算dataset的大小
         self._dataset_sizes = [
             len((dataset.cam0_files if not use_color else dataset.cam2_files)) - (extra_frames if self.use_index_mask is None else 0) for dataset in
             self._datasets]
+        # 如果使用列出的索引掩码
         if self.use_index_mask is not None:
             index_masks = []
             for sequence_length, sequence in zip(self._dataset_sizes, self.sequences):
@@ -75,10 +82,12 @@ class KittiOdometryDataset(Dataset):
                 for index_mask, dataset_size in zip(index_masks, self._dataset_sizes)
             ]
             self._dataset_sizes = [len(indices) for indices in self._indices]
+        # 如果设定每个序列的最大长度
         if max_length is not None:
             self._dataset_sizes = [min(s, max_length) for s in self._dataset_sizes]
         self.length = sum(self._dataset_sizes)
 
+        # 内参？TODO
         intrinsics_box = [self.compute_target_intrinsics(dataset, target_image_size, use_color) for dataset in
                           self._datasets]
         self._crop_boxes = [b for _, b in intrinsics_box]
@@ -110,6 +119,9 @@ class KittiOdometryDataset(Dataset):
         self.return_mvobj_mask = return_mvobj_mask
 
     def get_dataset_index(self, index: int):
+        '''
+        获取数据集索引
+        '''
         for dataset_index, dataset_size in enumerate(self._dataset_sizes):
             if index >= dataset_size:
                 index = index - dataset_size
@@ -118,6 +130,9 @@ class KittiOdometryDataset(Dataset):
         return None, None
 
     def preprocess_image(self, img: Image.Image, crop_box=None):
+        '''
+        预处理图像
+        '''
         if crop_box:
             img = img.crop(crop_box)
         if self.target_image_size:
@@ -129,11 +144,15 @@ class KittiOdometryDataset(Dataset):
         if not self.use_color:
             image_tensor = torch.stack((image_tensor, image_tensor, image_tensor))
         else:
+            # 彩图改变RGB顺序
             image_tensor = image_tensor.permute(2, 0, 1)
         del img
         return image_tensor
 
     def preprocess_depth(self, depth: np.ndarray, crop_box=None):
+        '''
+        预处理深度
+        '''
         if crop_box:
             if crop_box[1] >= 0 and crop_box[3] <= depth.shape[0]:
                 depth = depth[int(crop_box[1]):int(crop_box[3]), :]
@@ -152,6 +171,9 @@ class KittiOdometryDataset(Dataset):
         return torch.tensor(1 / depth)
 
     def preprocess_depth_dso(self, depth: Image.Image, dso_depth_parameters, crop_box=None):
+        '''
+        预处理dso_depth
+        '''
         h, w, f_x = dso_depth_parameters
         depth = np.array(depth, dtype=np.float)
         indices = np.array(np.nonzero(depth), dtype=np.float)
@@ -182,6 +204,9 @@ class KittiOdometryDataset(Dataset):
         return torch.tensor(depth, dtype=torch.float32)
 
     def preprocess_depth_annotated_lidar(self, depth: Image.Image, crop_box=None):
+        '''
+        预处理
+        '''
         depth = np.array(depth, dtype=np.float)
         h, w = depth.shape
         indices = np.array(np.nonzero(depth), dtype=np.float)

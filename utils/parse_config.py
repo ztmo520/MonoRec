@@ -16,8 +16,10 @@ class ConfigParser:
         args = args.parse_args()
         self.args = args
 
+        # 设置显卡
         if args.device:
             os.environ["CUDA_VISIBLE_DEVICES"] = args.device
+        # 处理恢复训练
         if args.resume is None:
             msg_no_cfg = "Configuration file need to be specified. Add '-c config.json', for example."
             assert args.config is not None, msg_no_cfg
@@ -32,9 +34,11 @@ class ConfigParser:
                 config.update(read_json(Path(args.config)))
 
         # load config file and apply custom cli options
+        # 载入设置参数和命令行补充参数
         self._config = _update_config(config, options, args)
 
         # set save_dir where trained model and log will be saved.
+        # 设置训练模型和日志的存储目录
         timestamp = datetime.now().strftime(r'%m%d_%H%M%S') if timestamp else ''
 
         if "trainer" in self.config:
@@ -59,9 +63,11 @@ class ConfigParser:
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
         # save updated config file to the checkpoint dir
+        # 保存更新后的参数文件到checkpoint目录
         write_json(self.config, self.save_dir / 'config.json')
 
         # configure logging module
+        # 设置logging模块
         setup_logging(self.log_dir)
         self.log_levels = {
             0: logging.WARNING,
