@@ -46,9 +46,14 @@ class Backprojection(nn.Module):
 
         self.N, self.H, self.W = batch_size, height, width
 
+        # meshgrid功能是生成网格，函数输入两个数据类型相同的一维张量，两个输出张量的行数为第一个输入张量的元素个数，列数为第二个输入张量的元素个数
+        # 其中第一个输出张量填充第一个输入张量中的元素，各行元素相同；第二个输出张量填充第二个输入张量中的元素各列元素相同。
         yy, xx = torch.meshgrid([torch.arange(0., float(self.H)), torch.arange(0., float(self.W))])
+        # 一维展开，按顺序排列
         yy = yy.contiguous().view(-1)
         xx = xx.contiguous().view(-1)
+        # nn.Parameter:将一个不可训练的类型为Tensor的参数转化为可训练的类型为parameter的参数
+        # 并将这个参数绑定到module里面，成为module中可训练的参数。
         self.ones = nn.Parameter(torch.ones(self.N, 1, self.H * self.W), requires_grad=False)
         self.coord = torch.unsqueeze(torch.stack([xx, yy], 0), 0).repeat(self.N, 1, 1)
         self.coord = nn.Parameter(torch.cat([self.coord, self.ones], 1), requires_grad=False)

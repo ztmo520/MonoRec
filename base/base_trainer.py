@@ -11,6 +11,7 @@ class BaseTrainer:
     def __init__(self, model, loss, metrics, optimizer, config):
         self.config = config
 
+        # 根据trainer或者evaluater设置参数
         if "trainer" in config.config:
             self.logger = config.get_logger('trainer', config['trainer']['verbosity'])
             cfg_trainer = config['trainer']
@@ -23,17 +24,20 @@ class BaseTrainer:
             self.monitor = "off"
 
         # setup GPU device if available, move model into configured device
+        # 设置GPU
         self.device, self.device_ids = self._prepare_device(config['n_gpu'])
         self.model = model.to(self.device)
         if len(self.device_ids) > 1:
             self.model = torch.nn.DataParallel(model, device_ids=self.device_ids)
 
+        # 设置其他参数
         self.loss = loss
         self.metrics = metrics
         self.optimizer = optimizer
         self.save_multiple = True
 
         # configuration to monitor model performance and save best
+        # 监测模型表现，并存最佳参数
         if self.monitor == 'off':
             self.mnt_mode = 'off'
             self.mnt_best = 0
@@ -49,12 +53,14 @@ class BaseTrainer:
         self.checkpoint_dir = config.save_dir
 
         # setup visualization writer instance
+        # 设置可视化参数
         if "trainer" in config.config:
             self.writer = TensorboardWriter(config.log_dir, self.logger, cfg_trainer['tensorboard'])
 
         if config.resume is not None:
             self._resume_checkpoint(config.resume)
 
+    # 带有抽象方法的类是抽象类，不能被实例化，继承了含抽象方法的子类必须复写抽象方法
     @abstractmethod
     def _train_epoch(self, epoch):
         """
@@ -69,10 +75,13 @@ class BaseTrainer:
         Full training logic
         """
         not_improved_count = 0
+        # epoch循环
         for epoch in range(self.start_epoch, self.epochs + 1):
+            # 训练一个epoch
             result = self._train_epoch(epoch)
 
             # save logged informations into log dict
+            # 保存log信息
             log = {'epoch': epoch}
             for key, value in result.items():
                 if key == 'metrics':
@@ -83,14 +92,17 @@ class BaseTrainer:
                     log[key] = value
 
             # print logged informations to the screen
+            # 向屏幕中打印log信息
             for key, value in log.items():
                 self.logger.info('    {:15s}: {}'.format(str(key), value))
 
             # evaluate model performance according to configured metric, save best checkpoint as model_best
+            # 根据配置的指标评估模型性能，将最佳检查点保存为 model_best
             best = False
             if self.mnt_mode != 'off':
                 try:
                     # check whether model performance improved or not, according to specified metric(mnt_metric)
+                    # 根据指定的度量（mnt_metric）检查模型性能是否有所提高
                     improved = (self.mnt_mode == 'min' and log[self.mnt_metric] <= self.mnt_best) or \
                                (self.mnt_mode == 'max' and log[self.mnt_metric] >= self.mnt_best)
                 except KeyError:
@@ -110,13 +122,14 @@ class BaseTrainer:
                     self.logger.info("Validation performance didn\'t improve for {} epochs. "
                                      "Training stops.".format(self.early_stop))
                     break
-
+            # 固定每个周期保存checkpoint
             if epoch % self.save_period == 0:
                 self._save_checkpoint(epoch, save_best=best)
 
     def _prepare_device(self, n_gpu_use):
         """
         setup GPU device if available, move model into configured device
+        如果可行的化，设置 GPU 设备（如果可用），将模型移动到配置的设备中
         """
         n_gpu = torch.cuda.device_count()
         if n_gpu_use > 0 and n_gpu == 0:
@@ -135,9 +148,9 @@ class BaseTrainer:
         """
         Saving checkpoints
 
-        :param epoch: current epoch number
-        :param log: logging information of the epoch
-        :param save_best: if True, rename the saved checkpoint to 'model_best.pth'
+        :param epoch: current epoch number 当前的epoch
+        :param log: logging information of the epoch 当前epoch的log信息
+        :param save_best: if True, rename the saved checkpoint to 'model_best.pth' 是否保存为model_best.pth
         """
         arch = type(self.model).__name__
         state = {
@@ -164,7 +177,7 @@ class BaseTrainer:
     def _resume_checkpoint(self, resume_path):
         """
         Resume from saved checkpoints
-
+        从保存的检查点恢复
         :param resume_path: Checkpoint path to be resumed
         """
         resume_path = str(resume_path)

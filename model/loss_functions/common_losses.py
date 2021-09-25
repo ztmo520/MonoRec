@@ -6,16 +6,17 @@ from torch.nn import functional as F
 from model.layers import Backprojection, point_projection, ssim
 from utils import create_mask, mask_mean
 
-
+# 对应论文公式（6）中间部分
 def compute_errors(img0, img1, mask=None):
     errors = .85 * torch.mean(ssim(img0, img1, pad_reflection=False, gaussian_average=True, comp_mode=True), dim=1) + .15 * torch.mean(torch.abs(img0 - img1), dim=1)
     if mask is not None: return errors, mask
     else: return errors
 
-
+# 重投影误差
 def reprojection_loss(depth_prediction: torch.Tensor, data_dict, automasking=False,
                       error_function=compute_errors, error_function_weight=None, use_mono=True, use_stereo=False,
                       reduce=True, combine_frames="min", mono_auto=False, border=0):
+    # 关键帧、关键帧位姿、关键帧相机内参
     keyframe = data_dict["keyframe"]
     keyframe_pose = data_dict["keyframe_pose"]
     keyframe_intrinsics = data_dict["keyframe_intrinsics"]
@@ -24,25 +25,33 @@ def reprojection_loss(depth_prediction: torch.Tensor, data_dict, automasking=Fal
     poses = []
     intrinsics = []
 
+    # 如果使用单目，加入其他帧和对应位姿、内参
     if use_mono:
         frames += data_dict["frames"]
         poses += data_dict["poses"]
         intrinsics += data_dict["intrinsics"]
+    # 如果使用双目帧，加入双目帧及其对应位姿、内参
     if use_stereo:
         frames += [data_dict["stereoframe"]]
         poses += [data_dict["stereoframe_pose"]]
         intrinsics += [data_dict["stereoframe_intrinsics"]]
 
+    # 获取关键帧的batch_size、通道数、长宽尺寸
     batch_size, channels, height, width = keyframe.shape
+    # 使用的所有帧数量
     frame_count = len(frames)
+    # 所谓关键帧外参，相机位姿的倒数
     keyframe_extrinsics = torch.inverse(keyframe_pose)
+    # 其他帧的外参
     extrinsics = [torch.inverse(pose) for pose in poses]
 
+    # 声明重投影，列表类型
     reprojections = []
     if border > 0:
         masks = [create_mask(batch_size, height, width, border, keyframe.device) for _ in range(frame_count)]
         warped_masks = []
 
+    # 反向重投影，nn.Module类型
     backproject_depth = Backprojection(batch_size, height, width)
     backproject_depth.to(keyframe.device)
 
@@ -113,8 +122,9 @@ def reprojection_loss(depth_prediction: torch.Tensor, data_dict, automasking=Fal
             loss += w * errors
     return loss
 
-
+# 对应公式（5）中的最后一项：边缘感知平滑项
 def edge_aware_smoothness_loss(depth_prediction, input, reduce=True):
+    # 获取关键帧
     keyframe = input["keyframe"]
     depth_prediction = depth_prediction / torch.mean(depth_prediction, dim=[2, 3], keepdim=True)
 
@@ -132,7 +142,7 @@ def edge_aware_smoothness_loss(depth_prediction, input, reduce=True):
     else:
         return  F.pad(d_dx, pad=(0, 1), mode='constant', value=0) + F.pad(d_dy, pad=(0, 0, 0, 1), mode='constant', value=0)
 
-
+# 对应公式（5）中的第二项
 def sparse_depth_loss(depth_prediction: torch.Tensor, depth_gt: torch.Tensor, l2=False, reduce=True):
     """
     :param depth_prediction:
@@ -140,6 +150,7 @@ def sparse_depth_loss(depth_prediction: torch.Tensor, depth_gt: torch.Tensor, l2
     :return:
     """
     n, c, h, w = depth_prediction.shape
+    # 掩膜。depth_gt为0的部分True，不为0的部分False
     mask = depth_gt == 0
     if not l2:
         errors = torch.abs(depth_prediction - depth_gt)
@@ -153,7 +164,7 @@ def sparse_depth_loss(depth_prediction: torch.Tensor, depth_gt: torch.Tensor, l2
     else:
         return errors, mask
 
-
+# 对应公式（5）
 def selfsup_loss(depth_prediction: torch.Tensor, input=None, scale=0, automasking=True, error_function=None, error_function_weight=None, use_mono=True, use_stereo=False, reduce=True, combine_frames="min", mask_border=0):
     reprojection_l = reprojection_loss(depth_prediction, input, automasking=automasking, error_function=error_function, error_function_weight=error_function_weight, use_mono=use_mono, use_stereo=use_stereo, reduce=reduce, combine_frames=combine_frames, border=mask_border)
     reprojection_l[torch.isnan(reprojection_l)] = 0

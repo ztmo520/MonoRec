@@ -58,6 +58,7 @@ class Trainer(BaseTrainer):
 
         self.value_faders = {k: ValueFader(v[0], v[1]) for k, v in self.value_faders.items()}
 
+    # 评估度量
     def _eval_metrics(self, data_dict, training=False):
         acc_metrics = np.zeros(len(self.metrics))
         for i, metric in enumerate(self.metrics):
@@ -71,7 +72,10 @@ class Trainer(BaseTrainer):
             valid = np.ones(len(self.metrics))
         return acc_metrics, valid
 
+    # 重写的抽象方法
+    # 也是主要的训练步骤
     def _train_epoch(self, epoch):
+        # TODO 设定模型的模式，是训练还是eval
         self.model.train()
 
         total_loss = 0
@@ -79,9 +83,11 @@ class Trainer(BaseTrainer):
         total_metrics = np.zeros(len(self.metrics))
         total_metrics_valid = np.zeros(len(self.metrics))
 
+        # TODO
         fade_values = {k: torch.tensor([fader.get_value(epoch)]) for k, fader in self.value_faders.items()}
 
         for batch_idx, (data, target) in enumerate(self.data_loader):
+            # 将数据送到GPU
             data.update(fade_values)
             data, target = to(data, self.device), to(target, self.device)
             data["target"] = target
@@ -89,6 +95,7 @@ class Trainer(BaseTrainer):
 
             start_time = time.time()
 
+            # 手动梯度置零，因为使用loss.backward()和optimizer.step()时进行梯度下降更新参数时，梯度不会手动清零
             self.optimizer.zero_grad()
 
             if not self.module_loss:
@@ -109,6 +116,7 @@ class Trainer(BaseTrainer):
 
             loss_dict = map_fn(loss_dict, torch.detach)
 
+            # TensorboardWriter,进行可视化
             self.writer.set_step((epoch - 1) * self.len_epoch + batch_idx)
 
             self.writer.add_scalar('loss', loss.item())
@@ -151,6 +159,7 @@ class Trainer(BaseTrainer):
             if batch_idx == self.len_epoch:
                 break
 
+        # 一个epoch完成之后，返回log
         log = {
             'loss': total_loss / self.len_epoch,
             'metrics': (total_metrics / total_metrics_valid).tolist()

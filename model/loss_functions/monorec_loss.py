@@ -5,7 +5,7 @@ from utils import mask_mean
 from .common_losses import compute_errors, sparse_depth_loss, edge_aware_smoothness_loss, reprojection_loss, \
     selfsup_loss
 
-
+# loss函数，对应论文
 def depth_loss(data_dict, alpha=None, roi=None, options=()):
     loss_dict = {}
 
@@ -16,12 +16,14 @@ def depth_loss(data_dict, alpha=None, roi=None, options=()):
     mask_border = 0
     error_function = compute_errors
 
+    # option里带有stereo，该步骤执行
     if "stereo" in options:
         use_stereo = True
 
     depth_gt = data_dict["target"]
     depth_predictions = data_dict["predicted_inverse_depths"]
 
+    # 设定groundtruth范围0-100
     depth_gt[depth_gt <= 0.0] = 0.0
     depth_gt[depth_gt >= 100.] = 100
 
@@ -33,6 +35,7 @@ def depth_loss(data_dict, alpha=None, roi=None, options=()):
     md2l_sum = 0
     for i, depth_prediction in enumerate(depth_predictions):
         depth_prediction[depth_prediction <= 0.0] = 0.0
+        # 将预测和gt弄到一样的大小
         if depth_prediction.shape[2] != depth_gt.shape[2]:
             depth_prediction = torch.nn.functional.upsample(depth_prediction, (depth_gt.shape[2], depth_gt.shape[3]))
         sdl = sparse_depth_loss(depth_prediction, depth_gt, l2=False)

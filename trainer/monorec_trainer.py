@@ -33,6 +33,7 @@ class MonoRecTrainer(Trainer):
         if model.augmenter is not None and model.training: model.augmenter(data_dict)
 
         # Get image features
+        # 获取图像特征
         data_dict["image_features"] = model._feature_extractor(data_dict["keyframe"] + .5)
 
         model.use_mono = False
@@ -40,6 +41,7 @@ class MonoRecTrainer(Trainer):
         model.cv_module.use_mono = False
         model.cv_module.use_stereo = True
 
+        # 在配置文件中，默认都是false，不执行
         if self.compute_stereo_pred:
             # Compute stereo CV
             with torch.no_grad():
@@ -77,13 +79,14 @@ class MonoRecTrainer(Trainer):
             data_dict["cost_volume"] = orig_data_dict["cost_volume"]
             data_dict["single_frame_cvs"] = orig_data_dict["single_frame_cvs"]
 
-        # Compute mask
+        # Compute mask，monorec_depth的配置中是false，不执行
         if self.compute_mask:
             data_dict = model.att_module(data_dict)
             if self.mult_mask_on_cv:
                 data_dict["cost_volume"] *= (1 - data_dict["cv_mask"])
         else:
             data_dict["cv_mask"] = data_dict["cost_volume"].new_zeros(data_dict["cost_volume"][:, :1, :, :].shape, requires_grad=False)
+        # 默认是true，执行计算单目深度
         if self.compute_mono_pred:
             # Compute mono depth
             data_dict = model.depth_module(data_dict)
@@ -117,11 +120,13 @@ class MonoRecTrainer(Trainer):
             data_dict["predicted_inverse_depths"] = [torch.cat([m, s], dim=0) for m, s in zip(mono_pred, stereo_pred)]
             data_dict["result"] = data_dict["predicted_inverse_depths"][0]
 
+        # 计算loss
         loss_dict = self.loss(data_dict, alpha=self.alpha, roi=self.roi, options=self.options)
 
         return loss_dict, data_dict
 
 
+    # 主要的训练函数
     def _train_epoch(self, epoch):
         self.model.train()
 
@@ -136,16 +141,20 @@ class MonoRecTrainer(Trainer):
 
             self.optimizer.zero_grad()
 
+            # 主要的训练过程，计算loss
             loss_dict, data = self._feed(data)
 
             loss_dict = map_fn(loss_dict, torch.mean)
 
             loss = loss_dict["loss"]
+            # 反向传播计算
             if loss.requires_grad:
                 loss.backward()
+            # 梯度下降
             self.optimizer.step()
             loss_dict = map_fn(loss_dict, torch.detach)
 
+            # 可视化显示
             self.writer.set_step((epoch - 1) * self.len_epoch + batch_idx)
 
             self.writer.add_scalar('loss', loss.item())
@@ -187,6 +196,7 @@ class MonoRecTrainer(Trainer):
             if batch_idx == self.len_epoch:
                 break
 
+        # 保存log
         log = {
             'loss': total_loss / self.len_epoch,
             'metrics': (total_metrics / self.len_epoch).tolist()

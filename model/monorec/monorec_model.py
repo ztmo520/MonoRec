@@ -613,20 +613,25 @@ class MonoRecModel(nn.Module):
         self.freeze_module = freeze_module
         self.freeze_resnet = freeze_resnet
 
+        # 1. 首先是resnet18编码，并且使用预训练模型，冻结其梯度
         self._feature_extractor = ResnetEncoder(num_layers=18, pretrained=True)
         if self.freeze_resnet:
             for p in self._feature_extractor.parameters(True):
                 p.requires_grad_(False)
 
+        # 2. cost volume模型
         self.cv_module = CostVolumeModule(use_mono=use_mono, use_stereo=use_stereo, use_ssim=use_ssim, sfcv_mult_mask=self.sfcv_mult_mask, patch_size=cv_patch_size)
+        # 3. 如果使用0或者2预训练模式，设定MaskModule是正常的还是简单的
         if not (self.pretrain_mode == 1 or self.pretrain_mode == 3):
             if not self.simple_mask:
                 self.att_module = MaskModule(self.cv_depth_steps, self._feature_extractor.num_ch_enc, use_cv=mask_use_cv, use_features=mask_use_feats)
             else:
                 self.att_module = SimpleMaskModule(self.cv_depth_steps, self._feature_extractor.num_ch_enc)
+        # 4. 如果使用1或者3预训练模式，设定DepthModule
         if not self.pretrain_mode == 2:
             self.depth_module = DepthModule(self.cv_depth_steps, feature_channels=self._feature_extractor.num_ch_enc, large_model=self.depth_large_model)
 
+        # 5. 如果有保存checkponit，
         if self.checkpoint_location is not None:
             if not isinstance(checkpoint_location, list):
                 checkpoint_location = [checkpoint_location]
@@ -636,6 +641,7 @@ class MonoRecModel(nn.Module):
                 checkpoint_state_dict = filter_state_dict(checkpoint_state_dict, checkpoint["arch"] == "DataParallel")
                 self.load_state_dict(checkpoint_state_dict, strict=False)
 
+        # 6. 如果加载给定的MaskModule检查点列表
         if self.mask_cp_loc is not None:
             if not isinstance(mask_cp_loc, list):
                 mask_cp_loc = [mask_cp_loc]
@@ -646,6 +652,7 @@ class MonoRecModel(nn.Module):
                 checkpoint_state_dict = {k[11:]: checkpoint_state_dict[k] for k in checkpoint_state_dict if k.startswith("att_module")}
                 self.att_module.load_state_dict(checkpoint_state_dict, strict=False)
 
+        # 7. 加载给点的DepthModule检查点列表
         if self.depth_cp_loc is not None:
             if not isinstance(depth_cp_loc, list):
                 depth_cp_loc = [depth_cp_loc]
@@ -656,12 +663,14 @@ class MonoRecModel(nn.Module):
                 checkpoint_state_dict = {k[13:]: checkpoint_state_dict[k] for k in checkpoint_state_dict if k.startswith("depth_module")}
                 self.depth_module.load_state_dict(checkpoint_state_dict, strict=False)
 
+        # 8. 对于冻结的模块列表，进行冻结
         for module_name in self.freeze_module:
             module = self.__getattr__(module_name + "_module")
             module.eval()
             for param in module.parameters(True):
                 param.requires_grad_(False)
 
+        # 9. 
         if self.augmentation == "depth":
             self.augmenter = DepthAugmentation()
         elif self.augmentation == "mask":
@@ -676,6 +685,7 @@ class MonoRecModel(nn.Module):
         data_dict["inv_depth_max"] = keyframe.new_tensor([self.inv_depth_min_max[1]])
         data_dict["cv_depth_steps"] = keyframe.new_tensor([self.cv_depth_steps], dtype=torch.int32)
 
+        # 上下文管理器，该语句wrap起来的部分不会track梯度
         with torch.no_grad():
             if not self.no_cv:
                 data_dict = self.cv_module(data_dict)

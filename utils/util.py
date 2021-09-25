@@ -108,6 +108,7 @@ def get_mask(pred: torch.Tensor, gt: torch.Tensor, max_distance=None, pred_all_v
 
 def mask_mean(t: torch.Tensor, m: torch.Tensor, dim=None):
     t = t.clone()
+    # TODO ？将depth_gt为0对应的位置，给error相同位置变为0？
     t[m] = 0
     els = 1
     if dim is None:
